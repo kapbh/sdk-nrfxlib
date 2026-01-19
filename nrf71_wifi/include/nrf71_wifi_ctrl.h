@@ -147,6 +147,15 @@ enum nrf_wifi_umac_commands {
 	NRF_WIFI_UMAC_CMD_PS_EXIT_STRATEGY,
 	/** Command to program Rx buffers to RPU */
 	NRF_WIFI_UMAC_CMD_CONFIG_RX_BUF,
+	/** Command to start FTM measurements @ref nrf_wifi_umac_cmd_meas_start */
+	NRF_WIFI_UMAC_CMD_MEAS_START,
+	/** Command to send GAS QUERY @ref nrf_wifi_cmd_gas_anqp_config */
+	NRF_WIFI_UMAC_CMD_GAS_ANQP_QUERY,
+	/** Command to send NEIGHBOR request @ref nrf_wifi_cmd_neighbor_req_config */
+	NRF_WIFI_UMAC_CMD_CONFIG_NEIGHBOR_REQ,
+
+	/** Command to set sqi threshold */
+	NRF_WIFI_UMAC_CMD_SQI_SET_THRESHOLD
 };
 
  /**
@@ -243,7 +252,17 @@ enum nrf_wifi_umac_events {
 	/** send connection information nrf_wifi_umac_event_conn_info. */
 	NRF_WIFI_UMAC_EVENT_GET_CONNECTION_INFO,
 	/** nrf_wifi_umac_event_power_save_info */
-	NRF_WIFI_UMAC_EVENT_GET_POWER_SAVE_INFO
+	NRF_WIFI_UMAC_EVENT_GET_POWER_SAVE_INFO,
+	/** Send measurement results nrf_wifi_umac_meas_result_info */
+	NRF_WIFI_UMAC_EVENT_PEER_MEAS_RESULTS,
+	/** Send gas results nrf_wifi_umac_event_get_gas_anqp_resp */
+	NRF_WIFI_UMAC_EVENT_GAS_QUERY_RESP_INFO,
+	/** Send neighbor results nrf_wifi_event_neighbor_report_result */
+	NRF_WIFI_UMAC_EVENT_NEIGHBOR_RESP_INFO,
+	/** Event to send sqi threshold */
+	NRF_WIFI_UMAC_EVENT_SQI_SET_THRESHOLD,
+	/** Eevnt to send ADD KEY command status */
+	NRF_WIFI_UMAC_EVENT_NEW_KEY_STATUS
 };
 
 /**
@@ -452,8 +471,10 @@ enum nrf_wifi_security_type {
 	NRF_WIFI_EAP_TLS_SHA256,
 	/** WPA2 SHA256 */
 	NRF_WIFI_WPA2_256,
-	/** WPA3 */
-	NRF_WIFI_WPA3,
+	/** WPA3-HNP */
+	NRF_WIFI_WPA3_HNP,
+	/** WPA3-H2E */
+	NRF_WIFI_WPA3_H2E,
 	/** 8021X SUITE-B SHA256 */
 	NRF_WIFI_EAP_SUITEB_SHA256,
 	/** 8021X SUITE-B SHA384 */
@@ -538,7 +559,7 @@ struct nrf_wifi_ssid {
 	unsigned char nrf_wifi_ssid[NRF_WIFI_MAX_SSID_LEN];
 } __NRF_WIFI_PKD;
 
-#define NRF_WIFI_MAX_IE_LEN 400
+#define NRF_WIFI_MAX_IE_LEN 600
 
 /**
  * @brief This structure contains data related to the Information Elements (IEs).
@@ -594,7 +615,7 @@ struct nrf_wifi_sae {
 	unsigned char sae_data[NRF_WIFI_MAX_SAE_DATA_LENGTH];
 } __NRF_WIFI_PKD;
 
-#define NRF_WIFI_MAX_FRAME_LEN 400
+#define NRF_WIFI_MAX_FRAME_LEN 600
 
 /**
  * @brief This structure defines the frame that is intended for transmission.
@@ -717,6 +738,18 @@ struct nrf_wifi_scan_params {
 	unsigned short num_scan_channels;
 	/** If true, skip local and IANA Unicast reserved MACs **/
 	unsigned char skip_local_admin_macs;
+	/** Maximum time (in milliseconds) the module can operate without a BT grant
+	  * before requiring Bluetooth access.
+	  * Minimum allowed value: 30 ms.
+	  * Use 0 or 0xFFFFFFFF for infinite duration (Wi-Fi can use the medium for the entire scan
+	  * without allocating grant to BT).
+	  * This parameter applies only to scan operations in the 2.4 GHz band
+	  **/
+	unsigned int bt_grant_tolerance_time;
+	/* Variable encodes the amount of time (in milliseconds) BT expects between scan operations.
+	 * BT coexistence logic will attempt to allocate this amount of time while scanning between channels.
+	 */
+	unsigned int bt_grant_time;
 	/** specific channels to be scanned */
 	unsigned int center_frequency[0];
 } __NRF_WIFI_PKD;
@@ -849,7 +882,7 @@ struct nrf_wifi_connect_common_info {
 
 
 /**
- * @brief This structure provides information about bss color code. 
+ * @brief This structure provides information about bss color code.
  *
  */
 struct nrf_wifi_he_bss_color {
@@ -1250,8 +1283,6 @@ struct nrf_wifi_umac_cmd_change_macaddr {
 #define NRF_WIFI_CMD_AUTHENTICATE_IE_VALID (1 << 4)
 #define NRF_WIFI_CMD_AUTHENTICATE_SAE_VALID (1 << 5)
 
-#define NRF_WIFI_CMD_AUTHENTICATE_LOCAL_STATE_CHANGE (1 << 0)
-
 /**
  * @brief This structure specifies the parameters to be used when sending an authentication request.
  *
@@ -1260,12 +1291,6 @@ struct nrf_wifi_umac_cmd_change_macaddr {
 struct nrf_wifi_umac_auth_info {
 	/** Frequency of the selected channel in MHz */
 	unsigned int frequency;
-	/** Flag attribute to indicate that a command is requesting a local
-	 *  authentication/association state change without invoking actual management
-	 *  frame exchange. This can be used with NRF_WIFI_UMAC_CMD_AUTHENTICATE
-	 *  NRF_WIFI_UMAC_CMD_DEAUTHENTICATE.
-	 */
-	unsigned short nrf_wifi_flags;
 	/** Authentication type. see &enum nrf_wifi_auth_type */
 	signed int auth_type;
 	/** Key information */
@@ -1280,9 +1305,6 @@ struct nrf_wifi_umac_auth_info {
 	struct nrf_wifi_sae sae;
 	/** MAC address (various uses) */
 	unsigned char nrf_wifi_bssid[NRF_WIFI_ETH_ADDR_LEN];
-	/** The following parameters will be used to construct bss database in case of
-	 * cfg80211 offload to host case.
-	 */
 	/** scanning width */
 	signed int scan_width;
 	/** Signal strength */
@@ -1297,6 +1319,8 @@ struct nrf_wifi_umac_auth_info {
 	unsigned short beacon_interval;
 	/** Beacon tsf */
 	unsigned long long tsf;
+	/** Indicate local state change without actual authentication frame exchange */
+	unsigned char local_state_change;
 } __NRF_WIFI_PKD;
 
 /**
@@ -1307,7 +1331,7 @@ struct nrf_wifi_umac_auth_info {
 struct nrf_wifi_umac_cmd_auth {
 	/** Header nrf_wifi_umac_hdr */
 	struct nrf_wifi_umac_hdr umac_hdr;
-	/** Indicate which of the following parameters are valid */
+	/** Indicate which of the auth info parameters are valid */
 	unsigned int valid_fields;
 	/** Information to be passed in the authentication command nrf_wifi_umac_auth_info */
 	struct nrf_wifi_umac_auth_info info;
@@ -1328,10 +1352,7 @@ struct nrf_wifi_umac_cmd_assoc {
 	unsigned int valid_fields;
 	/** nrf_wifi_connect_common_info */
 	struct nrf_wifi_connect_common_info connect_common_info;
-	/**
-	 * Previous BSSID, to be used by in ASSOCIATE commands to specify
-	 * using a reassociate frame.
-	 */
+	/** MAC address */
 	unsigned char mac_addr[NRF_WIFI_ETH_ADDR_LEN];
 } __NRF_WIFI_PKD;
 
@@ -1899,9 +1920,41 @@ struct nrf_wifi_event_vht_mcs_info {
 
 struct nrf_wifi_sta_vht_cap {
 	/** VHT capability , as in the VHT information IE */
-	unsigned short nrf_wifi_cap;
+	unsigned int nrf_wifi_cap;
 	/** MCS supported rates in VHT */
 	struct nrf_wifi_event_vht_mcs_info vht_mcs;
+} __NRF_WIFI_PKD;
+
+/**
+ * @brief This structure represents HE mcs support rates.
+ *
+ */
+
+struct nrf_wifi_he_mcs_nss_supp {
+	/** Channel width less than 80MHz,
+	 *  Rx MCS map 2 bits for each stream and total 8 streams.
+	 */
+	unsigned short rx_mcs_80;
+	/** Channel width less than 80MHz,
+	 *  Tx MCS map 2 bits for each stream and total 8 streams.
+	 */
+	unsigned short tx_mcs_80;
+	/** Channel width 160MHz,
+	 *  Rx MCS map 2 bits for each stream and total 8 streams.
+	 */
+	unsigned short rx_mcs_160;
+	/** Channel width 160MHz,
+	 *  Tx MCS map 2 bits for each stream and total 8 streams.
+	 */
+	unsigned short tx_mcs_160;
+	/** Channel width less than 80p80MHz,
+	 *  Rx MCS map 2 bits for each stream and total 8 streams.
+	 */
+	unsigned short rx_mcs_80p80;
+	/** Channel width less than 80p80MHz,
+	 *  Tx MCS map 2 bits for each stream and total 8 streams.
+	 */
+	unsigned short tx_mcs_80p80;
 } __NRF_WIFI_PKD;
 
 /**
@@ -1914,11 +1967,10 @@ struct nrf_wifi_he_cap_elem {
 	unsigned char mac_cap_info[6];
 	/** HE PHY capabilities information */
 	unsigned char phy_cap_info[11];
-	/** Optinal for 4,8, or 12 octes of Supported HE-MCS,
-	 *  NSS set field
-	 *  and PPE Thresholds field.
-	 */
-	unsigned char optional[37];
+	/** HE MCS support rates information */
+	struct nrf_wifi_he_mcs_nss_supp he_mcs_nss_supp;
+	/** PPE Thresholds field */
+	unsigned char ppe_thres[25];
 } __NRF_WIFI_PKD;
 
 /**
@@ -2709,6 +2761,7 @@ struct umac_display_results {
 	unsigned char twt_support;
 	/** management frame protection NRF_WIFI_MFP_REQUIRED/NRF_WIFI_MFP_CAPABLE */
 	unsigned char mfp_flag;
+	unsigned char msmr_capabilities;
 	/** reserved */
 	unsigned char reserved3;
 	/** reserved */
@@ -3235,38 +3288,6 @@ struct nrf_wifi_event_sta_vht_cap {
 } __NRF_WIFI_PKD;
 
 /**
- * @brief This structure represents HE mcs support rates.
- *
- */
-
-struct nrf_wifi_he_mcs_nss_supp {
-	/** Channel width less than 80MHz,
-	 *  Rx MCS map 2 bits for each stream and total 8 streams.
-	 */
-	unsigned short rx_mcs_80;
-	/** Channel width less than 80MHz,
-	 *  Tx MCS map 2 bits for each stream and total 8 streams.
-	 */
-	unsigned short tx_mcs_80;
-	/** Channel width 160MHz,
-	 *  Rx MCS map 2 bits for each stream and total 8 streams.
-	 */
-	unsigned short rx_mcs_160;
-	/** Channel width 160MHz,
-	 *  Tx MCS map 2 bits for each stream and total 8 streams.
-	 */
-	unsigned short tx_mcs_160;
-	/** Channel width less than 80p80MHz,
-	 *  Rx MCS map 2 bits for each stream and total 8 streams.
-	 */
-	unsigned short rx_mcs_80p80;
-	/** Channel width less than 80p80MHz,
-	 *  Tx MCS map 2 bits for each stream and total 8 streams.
-	 */
-	unsigned short tx_mcs_80p80;
-} __NRF_WIFI_PKD;
-
-/**
  * @brief This structure represents HE capabilities information.
  *
  */
@@ -3276,8 +3297,6 @@ struct nrf_wifi_event_sta_he_cap {
 	signed char nrf_wifi_he_supported;
 	/** HE capabilties information */
 	struct nrf_wifi_he_cap_elem he_cap_elem;
-	/** HE MCS support rates information */
-	struct nrf_wifi_he_mcs_nss_supp he_mcs_nss_supp;
 } __NRF_WIFI_PKD;
 
 /**
@@ -3370,7 +3389,7 @@ struct nrf_wifi_event_iface_combination {
 #define NRF_WIFI_INDEX_IDS_WIPHY_NAME 32
 #define NRF_WIFI_EVENT_GET_WIPHY_NUM_BANDS 4
 
-#define EXTENDED_FEATURE_LEN 60
+#define EXTENDED_FEATURE_LEN 69
 #define DIV_ROUND_UP_NL(n, d) (((n) + (d)-1) / (d))
 
 /**
@@ -3608,6 +3627,8 @@ struct nrf_wifi_umac_event_cmd_status {
 	unsigned int cmd_id;
 	/** Status codes */
 	unsigned int cmd_status;
+	/** Internal error code */
+	unsigned int rpu_error_code;
 } __NRF_WIFI_PKD;
 
 
@@ -4002,6 +4023,59 @@ struct nrf_wifi_umac_assoc_info {
 	unsigned short bss_max_idle_time;
 	/** Connection type */
 	unsigned char conn_type;
+} __NRF_WIFI_PKD;
+
+/**
+ * @brief This structure represents the command used to configure the signal quality
+ *  threshold for generating events when the signal quality crosses the configured threshold.
+ *
+ */
+struct nrf_wifi_cmd_sqi_threshold_config {
+	/** Header nrf_wifi_umac_hdr */
+	struct nrf_wifi_umac_hdr umac_hdr;
+	/** Interface index */
+	unsigned int if_index;
+	/** RSSI threshold */
+	int rssi_thold;
+	/** Hysteresis value */
+	unsigned int rssi_hyst;
+} __NRF_WIFI_PKD;
+
+/**
+ * @brief Signal Quality Level compared to the configured threshold.
+ * enum nrf_wifi_sqi_event_level - signal quality level compared to the
+ *                             configured threshold.
+ */
+enum nrf_wifi_sqi_event_level {
+	/** Signal Quality Level is below the configured threshold */
+	NRF_WIFI_EVENT_SQI_LEVEL_LOW,
+	/** Signal Quality Level is above the configured threshold */
+	NRF_WIFI_EVENT_SQI_LEVEL_HIGH,
+} __NRF_WIFI_PKD;
+
+/**
+ * @brief This structure represents the event generated when the signal quality
+ * crosses the configured threshold.
+ *
+ */
+struct nrf_wifi_event_sqi_threshold_config {
+	/** Header nrf_wifi_umac_hdr */
+	struct nrf_wifi_umac_hdr umac_hdr;
+	/** Signal Quality Level see &enum nrf_wifi_sqi_event_level */
+	signed int sqi_level;
+	/** Last RSSI value */
+	int last_rssi;
+} __NRF_WIFI_PKD;
+
+/**
+ * @brief This structure represents the status code for a key command.
+ *
+ */
+struct nrf_wifi_umac_event_key_cmd_status {
+	/** Header nrf_wifi_umac_hdr */
+	struct nrf_wifi_umac_hdr umac_hdr;
+	/** Command status */
+	int cmd_status;
 } __NRF_WIFI_PKD;
 
 /**
