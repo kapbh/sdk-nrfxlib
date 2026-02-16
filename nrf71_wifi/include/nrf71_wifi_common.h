@@ -1199,6 +1199,22 @@ struct rpu_conf_params {
 	unsigned char country_code[NRF_WIFI_COUNTRY_CODE_LEN];
 	/** Contention window value to be configured */
 	unsigned int tx_pkt_cw;
+	unsigned int rx_bss_color;
+	unsigned int rx_station_id;
+	/** TX DCM enable. Valid values: 0 (disabled), 1 (enabled) */
+	unsigned char tx_dcm;
+	/** TX Doppler enable. Valid values: 0 (disabled), 1 (enabled) */
+	unsigned char tx_doppler;
+	/** TX midamble periodicity. Valid values: 10, 20 */
+	unsigned char tx_midamble_periodicity;
+	/** TX 106-tone RU enable. Valid values: 0 (disabled), 1 (enabled) */
+	unsigned char tx_106_tone;
+	/** TX legacy length field (in octets). Valid range: 0-4095 */
+	unsigned short tx_legacy_length;
+	/** TX FEC padding factor. Valid values: 1, 2, 3, 4 */
+	unsigned char tx_fec_padd_factor;
+	/** Informs number of HE-LTFs: 0->1x, 1->2x, 2->4x, 3->6x, 4->8x */
+	unsigned char tx_num_he_ltf;
 } __NRF_WIFI_PKD;
 
 /**
